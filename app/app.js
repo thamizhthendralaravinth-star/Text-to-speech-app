@@ -1041,6 +1041,7 @@
   // ---------- settings ----------
   let previewAudio = null;
   const renderChoices = () => {
+    document.querySelectorAll('.voice-name').forEach((el) => { el.textContent = voice().name; });
     const sl = $('style-list');
     sl.textContent = '';
     for (const s of STYLES) {
@@ -1141,7 +1142,8 @@
     $('more').setAttribute('aria-expanded', String(open));
   };
   $('more').addEventListener('click', (e) => { e.stopPropagation(); menuOpen($('voice-menu').hidden); });
-  document.addEventListener('click', (e) => { if (!$('voice-menu').hidden && !e.target.closest('#voice-menu, #more')) menuOpen(false); });
+  document.querySelectorAll('.voice-open').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); menuOpen(true); }));
+  document.addEventListener('click', (e) => { if (!$('voice-menu').hidden && e.target.isConnected && !e.target.closest('#voice-menu, #more, .voice-open')) menuOpen(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menuOpen(false); });
   $('book-input').addEventListener('change', async () => {
     if (!current) return;
