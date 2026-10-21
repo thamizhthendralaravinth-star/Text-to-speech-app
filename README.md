@@ -1,5 +1,9 @@
 # Thendral Text-to-Speech
 
+iPhone app: https://thamizhthendralaravinth-star.github.io/Text-to-speech-app/ (open in Safari → Share → Add to Home Screen)
+
+Windows app: https://github.com/thamizhthendralaravinth-star/Text-to-speech-app/releases/latest
+
 Take a photo of a textbook page and hear it read aloud. Everything runs on your device, with no internet needed after install.
 
 - Photo → text, in English and Tamil (Tesseract OCR is bundled inside the app)
