@@ -1,0 +1,53 @@
+name: Thendral
+options:
+  bundleIdPrefix: com.thamizhthendral
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+packages:
+  SherpaOnnx:
+    url: https://github.com/k2-fsa/sherpa-onnx
+    exactVersion: 1.13.8
+targets:
+  Thendral:
+    type: application
+    platform: iOS
+    sources:
+      - path: Thendral
+      - path: web
+        type: folder
+        buildPhase: resources
+      - path: kokoro
+        type: folder
+        buildPhase: resources
+        optional: true
+    scheme: {}
+    dependencies:
+      - package: SherpaOnnx
+        product: sherpa-onnx
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thamizhthendral.thendral
+        PRODUCT_NAME: Thendral
+        MARKETING_VERSION: "1.1"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        OTHER_LDFLAGS: ["-lc++"]
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_BITCODE: "NO"
+    info:
+      path: Thendral/Info.plist
+      properties:
+        CFBundleDisplayName: Thendral
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIBackgroundModes: [audio]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: Thendral uses the camera to photograph textbook pages so it can read them aloud.
+        NSPhotoLibraryUsageDescription: Thendral opens photos of textbook pages you choose so it can read them aloud.

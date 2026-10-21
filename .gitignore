@@ -2,3 +2,7 @@ node_modules/
 dist/
 thendral-tts.zip
 models/
+ios/web/
+ios/kokoro/
+ios/*.xcodeproj/
+ios/build/

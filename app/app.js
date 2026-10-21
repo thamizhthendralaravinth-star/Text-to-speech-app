@@ -431,16 +431,28 @@
       const bmp = await loadBitmap(file);
       const photo = await toBlob(draw(bmp, 2000), 0.85);
       const thumb = await toBlob(draw(bmp, 200), 0.7);
-      const ocrCanvas = prepareForReading(bmp);
-      const w = await getWorker(langs);
-      const { data } = await w.recognize(ocrCanvas, {}, { blocks: true, text: true });
-      let paras = buildParas(data.blocks, ocrCanvas.width, ocrCanvas.height);
+      let data, ocrW, ocrH;
+      if (native && native.recognize && !langs.includes('tam')) {
+        // iPhone app: Apple's own text recognition (English)
+        setProgress('Reading the page…', 0.4);
+        const r = await native.recognize(file);
+        data = { blocks: r.blocks, confidence: r.confidence };
+        ocrW = r.width;
+        ocrH = r.height;
+      } else {
+        const ocrCanvas = prepareForReading(bmp);
+        const w = await getWorker(langs);
+        ({ data } = await w.recognize(ocrCanvas, {}, { blocks: true, text: true }));
+        ocrW = ocrCanvas.width;
+        ocrH = ocrCanvas.height;
+      }
+      let paras = buildParas(data.blocks, ocrW, ocrH);
       let readBy = 'device';
       if (claudeReader && settings.get('aiRead', true) && paras.length) {
         try {
           setProgress('Claude is checking every word against the photo…', 0.95);
           const lines = lastLines;
-          const ai = await readWithClaude(bmp, lines, ocrCanvas.width, langs);
+          const ai = await readWithClaude(bmp, lines, ocrW, langs);
           paras = mergeReadings(ai, paras);
           readBy = 'claude';
         } catch (err) {
@@ -965,7 +977,8 @@
         const left = p.done ? ((Date.now() - t0) / p.done) * (p.total - p.done) / 1000 : 0;
         setProgress(`Making audio with ${v.name} · ${st.name} — sentence ${p.done} of ${p.total}${left > 5 ? `, about ${Math.ceil(left / 60)} min left` : ''}`, p.done / p.total);
       });
-      page.audio = new Blob([res.mp3], { type: 'audio/mpeg' });
+      page.audio = new Blob([res.audio || res.mp3], { type: res.type || 'audio/mpeg' });
+      page.audioExt = res.ext || 'mp3';
       page.timings = res.timings;
       page.split = built.map((b) => b.toks.length);
       page.voice = v.id;
@@ -985,10 +998,12 @@
     }
   };
 
+  const audioExtOf = (p) => p.audioExt || (p.audio && /mp4|m4a|aac/.test(p.audio.type) ? 'm4a' : 'mp3');
+
   const bundleJSON = (p) => JSON.stringify({
     app: 'thendral', v: 1, id: p.id, title: p.title, book: bookOf(p), created: p.created, lang: p.lang,
     paras: p.paras, timings: p.timings || null, split: p.split || null, voice: p.voice || null, style: p.style || null,
-    audioFile: p.audio ? fileBase(p) + '.mp3' : null, photoFile: p.photo ? fileBase(p) + '.jpg' : null,
+    audioFile: p.audio ? fileBase(p) + '.' + audioExtOf(p) : null, photoFile: p.photo ? fileBase(p) + '.jpg' : null,
   });
 
   const pageText = (p) => p.title + '\n\n' + p.paras.map(paraText).join('\n\n') + '\n';
@@ -999,6 +1014,7 @@
       book: bookOf(p),
       base: fileBase(p),
       mp3: p.audio ? new Uint8Array(await p.audio.arrayBuffer()) : null,
+      audioExt: audioExtOf(p),
       photo: p.photo ? new Uint8Array(await p.photo.arrayBuffer()) : null,
       json: bundleJSON(p),
       text: pageText(p),
@@ -1028,7 +1044,7 @@
     }
     const files = [new File([pageText(current)], fileBase(current) + '.txt', { type: 'text/plain' })];
     if (current.photo) files.unshift(new File([current.photo], fileBase(current) + '.jpg', { type: 'image/jpeg' }));
-    if (current.audio) files.push(new File([current.audio], fileBase(current) + '.mp3', { type: 'audio/mpeg' }));
+    if (current.audio) files.push(new File([current.audio], fileBase(current) + '.' + audioExtOf(current), { type: current.audio.type || 'audio/mpeg' }));
     const r = await shareFile(files);
     if (r === null) toast('This browser cannot save files here. On the laptop app, Save page puts everything in your Thendral folder.', 5000);
     else if (r && !current.audio) toast('Saved photo and text. Audio comes from the laptop app.', 4000);
@@ -1069,14 +1085,15 @@
         if (data.app !== 'thendral') continue;
         const stem = jf.name.replace(/\.thendral\.json$/i, '').replace(/\.json$/i, '');
         const find = (name, ext) => list.find((f) => f.name === name) || list.find((f) => f.name.toLowerCase() === (stem + ext).toLowerCase());
-        const mp3 = find(data.audioFile, '.mp3');
+        const mp3 = find(data.audioFile, '.mp3') || find(null, '.m4a');
         const jpg = find(data.photoFile, '.jpg');
         let thumb = null;
         if (jpg) { try { thumb = await toBlob(draw(await loadBitmap(jpg), 200), 0.7); } catch { /* keep going */ } }
         const rec = {
           id: data.id, created: data.created, title: data.title, book: data.book, lang: data.lang, paras: data.paras,
           timings: mp3 ? data.timings : null, split: data.split || null, voice: data.voice, style: data.style,
-          audio: mp3 ? new Blob([await mp3.arrayBuffer()], { type: 'audio/mpeg' }) : null,
+          audio: mp3 ? new Blob([await mp3.arrayBuffer()], { type: /\.m4a$/i.test(mp3.name) ? 'audio/mp4' : 'audio/mpeg' }) : null,
+          audioExt: mp3 && /\.m4a$/i.test(mp3.name) ? 'm4a' : 'mp3',
           photo: jpg ? new Blob([await jpg.arrayBuffer()], { type: 'image/jpeg' }) : null,
           thumb, pos: 0,
         };
@@ -1282,7 +1299,7 @@
     });
     document.querySelectorAll('.voice-where').forEach((el) => {
       el.textContent = native
-        ? 'Audio is made on this laptop and saved into your Thendral folder, ready for your iPhone.'
+        ? (native.platform === 'ios' ? 'Audio is made on this iPhone and saved in Files › On My iPhone › Thendral.' : 'Audio is made on this laptop and saved into your Thendral folder, ready for your iPhone.')
         : 'These voices are made by the Thendral app on your laptop. Pages without laptop audio use this device’s own voice.';
     });
   };
@@ -1452,7 +1469,8 @@
   }
 
   if (native) {
-    $('import-btn').hidden = true;
+    $('import-btn').hidden = native.platform !== 'ios';   // the iPhone app can still import pages made on the laptop
+    $('change-folder').hidden = native.platform === 'ios';
     $('folder-group').hidden = false;
     native.info().then((info) => {
       nativeInfo = info;
