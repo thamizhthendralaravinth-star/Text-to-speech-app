@@ -1,5 +1,5 @@
 // Stores the whole app (including the OCR engine and language data) so it runs with no internet.
-const CACHE = 'thendral-v1';
+const CACHE = 'thendral-v2';
 const FILES = [
   './',
   'index.html',
