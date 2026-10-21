@@ -111,7 +111,7 @@
   };
 
   const ABBREV = /^(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|Prof|Fig|Figs|No|Vol|approx|Ch|Sec|Ref|St|Inc|Ltd|[A-Z])\.$/i;
-  const endsSentence = (tok) => /[.!?।:;]["')\]]*$/.test(tok) && !ABBREV.test(tok.replace(/^[("'[]+/, ''));
+  const endsSentence = (tok) => /[.!?।]["')\]]*$/.test(tok) && !ABBREV.test(tok.replace(/^[("'[]+/, ''));
 
   // Read medical shorthand the way a lecturer would say it.
   const spokenForm = (s) => s
@@ -128,8 +128,6 @@
     .replace(/(\d)\s*mm\b/g, '$1 millimetres')
     .replace(/(\d)\s*IU\b/g, '$1 international units')
     .replace(/(\d)\s*%/g, '$1 percent')
-    .replace(/\bIM\b/g, 'intramuscularly')
-    .replace(/\bIV\b/g, 'intravenously')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -191,7 +189,12 @@
   const buildParas = (blocks, W, H) => {
     const lines = [];
     for (const b of blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) {
-      const words = (l.words || []).filter((w) => w.text && w.text.trim() && w.confidence > 15);
+      // drop specks and stray marks the camera picks up (|, ~, », lone low-confidence fragments)
+      const words = (l.words || [])
+        .map((w) => ({ ...w, text: (w.text || '').replace(/^[|~_=«»•·]+|[|~_=«»•·]+$/g, '') }))
+        .filter((w) => w.text.trim() && /[A-Za-z0-9\u0B80-\u0BFF]/.test(w.text)
+          && !(w.confidence < 35 && w.text.length <= 2 && !/^(a|I|an|in|is|it|of|on|or|to|at|as|be|by|do|if|no|so|up|we|he|my|me|us)$/i.test(w.text.replace(/[^\w]/g, '')))
+          && w.confidence > 20);
       if (words.length) lines.push({ bbox: l.bbox, words });
     }
     if (!lines.length) return [];
@@ -590,6 +593,11 @@
     if (hasAudio()) {
       audio.playbackRate = rate;
       audio.play().catch(() => { playing = false; setPlayIcon(); });
+    } else if (!native && !phoneVoiceOk) {
+      playing = false;
+      setPlayIcon();
+      keepAwake(false);
+      showVoiceChoice();
     } else {
       speakCurrent();
     }
@@ -1023,20 +1031,22 @@
   $('nav-fwd').addEventListener('click', () => (inFrame ? forward() : history.forward()));
   if (!inFrame) { try { history.replaceState({ thendral: 0 }, ''); } catch { /* ignore */ } }
 
-  // ---------- "your voice comes from the laptop" notice ----------
-  const updateBanner = () => {
-    const show = !native && !!current && !hasAudio() && !settings.get('bannerOk', false);
-    $('voice-banner').hidden = !show;
-    if (show) {
-      const v = voice();
-      const t = $('voice-banner-text');
-      t.textContent = '';
-      const b = document.createElement('b');
-      b.textContent = `You are hearing your phone's own voice, not ${v.name}.`;
-      t.append(b, ` ${v.name} and the other voices you chose are made by the Thendral laptop app. Once it is installed, each page you photograph comes with ${v.name}'s audio, and you import it here.`);
-    }
+  // ---------- no laptop audio yet: ask before using the phone's own voice ----------
+  let phoneVoiceOk = false;
+  const showVoiceChoice = () => {
+    $('voice-banner').hidden = false;
+    const t = $('voice-banner-text');
+    t.textContent = '';
+    const b = document.createElement('b');
+    b.textContent = `This page has no ${voice().name} audio yet.`;
+    t.append(b, ` ${voice().name}'s voice is recorded by the Thendral laptop app. Until then, you can listen with your phone's own voice.`);
+    $('voice-banner-ok').textContent = "Use phone's voice";
+    $('voice-banner-ok').onclick = () => { phoneVoiceOk = true; $('voice-banner').hidden = true; begin(); };
+    $('voice-banner').scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
-  $('voice-banner-ok').addEventListener('click', () => { settings.set('bannerOk', true); updateBanner(); });
+
+  // ---------- "your voice comes from the laptop" notice ----------
+  const updateBanner = () => { $('voice-banner').hidden = true; };
 
   // ---------- settings ----------
   let previewAudio = null;
