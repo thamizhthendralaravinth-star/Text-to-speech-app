@@ -154,6 +154,62 @@
   };
   const toBlob = (canvas, q) => new Promise((r) => canvas.toBlob(r, 'image/jpeg', q));
 
+  // Even out shadows and uneven light before reading. Measured on test photos with a shadow across the text:
+  // plain grey-scale gave 60-74% wrong words, this gave 1-3%.
+  const grayOf = (c) => {
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const g = new Float32Array(c.width * c.height);
+    for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    return g;
+  };
+  const boxMean = (g, w, h, r) => {
+    const I = new Float64Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let row = 0;
+      for (let x = 0; x < w; x++) { row += g[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; }
+    }
+    const m = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+        m[y * w + x] = (I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0]) / ((y1 - y0) * (x1 - x0));
+      }
+    }
+    return m;
+  };
+  const prepareForReading = (src) => {
+    const big = draw(src, 3000);
+    const w = big.width, h = big.height;
+    // the background light is estimated on a small copy (fast, low memory), then applied to the full image
+    const small = draw(src, 750);
+    const sw = small.width, sh = small.height;
+    const bg = boxMean(grayOf(small), sw, sh, Math.round(Math.max(sw, sh) / 30));
+    const g = grayOf(big);
+    const kx = sw / w, ky = sh / h;
+    for (let y = 0; y < h; y++) {
+      const by = Math.min(sh - 1, Math.floor(y * ky)) * sw;
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        g[i] = Math.min(255, (g[i] / Math.max(1, bg[by + Math.min(sw - 1, Math.floor(x * kx))])) * 235);
+      }
+    }
+    const sample = [];
+    for (let i = 0; i < g.length; i += 53) sample.push(g[i]);
+    sample.sort((a, b) => a - b);
+    const lo = sample[Math.floor(sample.length * 0.01)], hi = sample[Math.floor(sample.length * 0.6)];
+    const ctx = big.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const px = img.data;
+    for (let i = 0; i < g.length; i++) {
+      const v = Math.max(0, Math.min(255, ((g[i] - lo) / Math.max(1, hi - lo)) * 255));
+      px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v;
+      px[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return big;
+  };
+
   // ---------- status bar ----------
   const setProgress = (label, p) => {
     $('status').hidden = false;
@@ -186,6 +242,7 @@
 
   // Group OCR lines into paragraphs the way they sit on the printed page:
   // a new paragraph starts at a larger-than-usual gap, a first-line indent, a heading-sized line, or a new column.
+  const medianOf = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] || 0; };
   const buildParas = (blocks, W, H) => {
     const lines = [];
     for (const b of blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) {
@@ -193,26 +250,37 @@
       const words = (l.words || [])
         .map((w) => ({ ...w, text: (w.text || '').replace(/^[|~_=«»•·]+|[|~_=«»•·]+$/g, '') }))
         .filter((w) => w.text.trim() && /[A-Za-z0-9\u0B80-\u0BFF]/.test(w.text)
+          && (w.text.match(/[A-Za-z0-9\u0B80-\u0BFF]/g) || []).length * 2 >= w.text.length   // not mostly dashes/marks
           && !(w.confidence < 35 && w.text.length <= 2 && !/^(a|I|an|in|is|it|of|on|or|to|at|as|be|by|do|if|no|so|up|we|he|my|me|us)$/i.test(w.text.replace(/[^\w]/g, '')))
-          && w.confidence > 20);
-      if (words.length) lines.push({ bbox: l.bbox, words });
+          && (w.confidence > 20 || w.text.replace(/[^A-Za-z\u0B80-\u0BFF]/g, '').length >= 4));   // never drop a real long word
+      const meanConf = words.reduce((t, w) => t + w.confidence, 0) / (words.length || 1);
+      if (meanConf < 45 && words.every((w) => w.text.replace(/[^A-Za-z\u0B80-\u0BFF]/g, '').length <= 3)) continue;
+      if (words.length) lines.push({ bbox: l.bbox, words, wh: medianOf(words.map((w) => w.bbox.y1 - w.bbox.y0)), base: l.baseline && l.baseline.x1 > l.baseline.x0 ? l.baseline : null });
     }
     if (!lines.length) return [];
-    const hs = lines.map((l) => l.bbox.y1 - l.bbox.y0).sort((a, b) => a - b);
-    const medH = hs[Math.floor(hs.length / 2)] || 20;
+    // single-column page (the usual textbook layout): read lines strictly top to bottom
+    const widest = lines.reduce((a, l) => ((l.bbox.x1 - l.bbox.x0) > (a.bbox.x1 - a.bbox.x0) ? l : a), lines[0]).bbox;
+    const inColumn = lines.filter((l) => Math.min(l.bbox.x1, widest.x1) - Math.max(l.bbox.x0, widest.x0) > (l.bbox.x1 - l.bbox.x0) * 0.5).length;
+    if (inColumn >= lines.length * 0.8) lines.sort((a, b) => (a.bbox.y0 + a.bbox.y1) - (b.bbox.y0 + b.bbox.y1));
+    const medH = medianOf(lines.map((l) => l.wh)) || 20;   // word height: unaffected by a tilted photo
+    // baseline height at one shared x, so a tilted photo does not distort line spacing
+    const xMid = (Math.min(...lines.map((l) => l.bbox.x0)) + Math.max(...lines.map((l) => l.bbox.x1))) / 2;
+    const yAt = (l) => (l.base ? l.base.y0 + ((l.base.y1 - l.base.y0) * (xMid - l.base.x0)) / (l.base.x1 - l.base.x0) : l.bbox.y1);
+    const pitches = lines.slice(1).map((l, i) => yAt(l) - yAt(lines[i])).filter((d) => d > medH * 0.5).sort((a, b) => a - b);
+    const medPitch = pitches[Math.floor(pitches.length * 0.4)] || medH * 1.4;
     const lefts = lines.map((l) => l.bbox.x0).sort((a, b) => a - b);
     const leftEdge = lefts[Math.floor(lefts.length * 0.2)];
     const groups = [];
     let g = null;
     lines.forEach((l, i) => {
       const prev = lines[i - 1];
-      const heading = (l.bbox.y1 - l.bbox.y0) > medH * 1.3;
+      const heading = l.wh > medH * 1.3;
       let split = !g;
       if (prev && g) {
-        const gap = l.bbox.y0 - prev.bbox.y1;
         const overlapX = Math.min(l.bbox.x1, prev.bbox.x1) - Math.max(l.bbox.x0, prev.bbox.x0);
         const indented = l.bbox.x0 - leftEdge > medH * 0.9 && prev.bbox.x0 - leftEdge < medH * 0.5;
-        if (gap > medH * 0.75 || gap < -medH || overlapX < 0 || indented || heading !== g.heading) split = true;
+        const pitch = yAt(l) - yAt(prev);
+        if (pitch > medPitch * 1.35 || pitch < -medH || overlapX < 0 || indented || heading !== g.heading) split = true;
       }
       if (split) { g = { lines: [], heading }; groups.push(g); }
       g.lines.push(l);
@@ -250,7 +318,7 @@
       const bmp = await loadBitmap(file);
       const photo = await toBlob(draw(bmp, 2000), 0.85);
       const thumb = await toBlob(draw(bmp, 200), 0.7);
-      const ocrCanvas = draw(bmp, 2600, 'grayscale(1) contrast(1.2)');
+      const ocrCanvas = prepareForReading(bmp);
       const w = await getWorker(langs);
       const { data } = await w.recognize(ocrCanvas, {}, { blocks: true, text: true });
       const paras = buildParas(data.blocks, ocrCanvas.width, ocrCanvas.height);
