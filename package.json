@@ -1,7 +1,7 @@
 {
   "name": "thendral-tts",
   "productName": "Thendral Text-to-Speech",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Take a photo of a textbook page and hear it read aloud. Works offline.",
   "main": "electron/main.js",
   "private": true,
@@ -10,11 +10,14 @@
     "vendor": "node scripts/copy-vendor.js",
     "start": "electron .",
     "serve": "npx --yes http-server@14.1.1 app -p 8080 -c-1",
-    "dist:win": "electron-builder --win nsis portable"
+    "dist:win": "electron-builder --win nsis portable",
+    "get-voice": "node scripts/get-voice.js"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/tam": "^1.0.0",
+    "sherpa-onnx-node": "^1.13.8",
     "tesseract.js": "^6.0.1",
     "tesseract.js-core": "^6.0.0"
   },
@@ -29,7 +32,7 @@
       "app/**/*",
       "electron/**/*",
       "package.json",
-      "!node_modules/**/*"
+      "node_modules/**/*"
     ],
     "win": {
       "icon": "electron/icon.ico",
@@ -41,13 +44,21 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Thendral"
+      "shortcutName": "Thendral",
+      "artifactName": "Thendral-Setup-${version}.exe"
     },
     "portable": {
       "artifactName": "Thendral-Portable-${version}.exe"
     },
     "directories": {
       "output": "dist"
-    }
+    },
+    "asar": false,
+    "extraResources": [
+      {
+        "from": "models/kokoro-int8-en-v0_19",
+        "to": "kokoro"
+      }
+    ]
   }
 }

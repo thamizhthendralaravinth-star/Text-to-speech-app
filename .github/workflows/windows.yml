@@ -14,12 +14,13 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run get-voice
+        shell: bash
       - run: npx electron-builder --win nsis portable --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: Thendral-Windows
-          path: |
-            dist/*.exe
+          path: dist/*.exe
       - if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:

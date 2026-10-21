@@ -1,5 +1,5 @@
 // Stores the whole app (including the OCR engine and language data) so it runs with no internet.
-const CACHE = 'thendral-v2';
+const CACHE = 'thendral-v3';
 const FILES = [
   './',
   'index.html',
@@ -16,6 +16,10 @@ const FILES = [
   'vendor/core/tesseract-core-simd-lstm.wasm.js',
   'lang/eng.traineddata.gz',
   'lang/tam.traineddata.gz',
+  'voices/bella.mp3',
+  'voices/sarah.mp3',
+  'voices/michael.mp3',
+  'voices/george.mp3',
 ];
 
 self.addEventListener('install', (e) => {
