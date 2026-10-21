@@ -243,6 +243,75 @@
   // Group OCR lines into paragraphs the way they sit on the printed page:
   // a new paragraph starts at a larger-than-usual gap, a first-line indent, a heading-sized line, or a new column.
   let lastLines = [];
+
+  // Reading order for textbook layouts: one column, or two columns with headings across the page.
+  // 1. A line that crosses the gap between columns is split there.
+  // 2. The column gap is found from where no text sits.
+  // 3. Down the left column, then down the right; a full-width line (heading, figure caption) starts a new band.
+  const segmentOf = (words) => {
+    const bb = { x0: Math.min(...words.map((w) => w.bbox.x0)), y0: Math.min(...words.map((w) => w.bbox.y0)), x1: Math.max(...words.map((w) => w.bbox.x1)), y1: Math.max(...words.map((w) => w.bbox.y1)) };
+    const a = words[0].bbox, z = words[words.length - 1].bbox;
+    return { bbox: bb, words, wh: medianOf(words.map((w) => w.bbox.y1 - w.bbox.y0)), base: { x0: a.x0, y0: a.y1, x1: z.x1, y1: z.y1 } };
+  };
+  const orderForReading = (lines) => {
+    if (lines.length < 2) return;
+    // 1. split at wide gaps
+    const split = [];
+    for (const l of lines) {
+      const h = l.wh || 20;
+      let cur = [l.words[0]];
+      for (let i = 1; i < l.words.length; i++) {
+        const gap = l.words[i].bbox.x0 - l.words[i - 1].bbox.x1;
+        if (gap > h * 2.2) { split.push(cur); cur = []; }
+        cur.push(l.words[i]);
+      }
+      if (cur.length === l.words.length) split.push(l); else { split.push(cur); }
+    }
+    const segs = split.map((x) => (Array.isArray(x) ? segmentOf(x) : x));
+    // 2. find a column gap in the middle of the text
+    const X0 = Math.min(...segs.map((s) => s.bbox.x0)), X1 = Math.max(...segs.map((s) => s.bbox.x1));
+    const span = X1 - X0;
+    const narrow = segs.filter((s) => s.bbox.x1 - s.bbox.x0 < span * 0.62);
+    let gutter = null;
+    if (narrow.length >= 4) {
+      const bins = 120, cover = new Array(bins).fill(0);
+      for (const s of narrow) {
+        const a = Math.floor(((s.bbox.x0 - X0) / span) * bins), b = Math.ceil(((s.bbox.x1 - X0) / span) * bins);
+        for (let i = Math.max(0, a); i < Math.min(bins, b); i++) cover[i]++;
+      }
+      let best = -1, bestLen = 0;
+      for (let i = Math.floor(bins * 0.25); i < Math.ceil(bins * 0.75); i++) {
+        const open = Math.max(1, narrow.length * 0.1);   // a heading or two may cross the gap
+        if (cover[i] > open) continue;
+        let j = i;
+        while (j < bins && cover[j] <= open) j++;
+        if (j - i > bestLen) { bestLen = j - i; best = i; }
+        i = j;
+      }
+      const left = narrow.filter((s) => (s.bbox.x0 + s.bbox.x1) / 2 < X0 + (best / bins) * span).length;
+      if (best >= 0 && bestLen >= 2 && left >= 2 && narrow.length - left >= 2) gutter = X0 + ((best + bestLen / 2) / bins) * span;
+    }
+    const mid = (s) => (s.bbox.y0 + s.bbox.y1) / 2;
+    segs.sort((a, b) => mid(a) - mid(b));
+    let ordered = segs;
+    if (gutter !== null) {
+      // 3. bands between full-width lines; left column, then right column
+      ordered = [];
+      let band = [];
+      const flush = () => {
+        band.filter((s) => s.bbox.x1 <= gutter + span * 0.02).forEach((s) => ordered.push(s));
+        band.filter((s) => s.bbox.x1 > gutter + span * 0.02).forEach((s) => ordered.push(s));
+        band = [];
+      };
+      for (const s of segs) {
+        const crosses = s.bbox.x0 < gutter - span * 0.02 && s.bbox.x1 > gutter + span * 0.02;
+        if (crosses) { flush(); ordered.push(s); } else band.push(s);
+      }
+      flush();
+    }
+    lines.length = 0;
+    ordered.forEach((s) => lines.push(s));
+  };
   const medianOf = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] || 0; };
   const buildParas = (blocks, W, H) => {
     const lines = [];
@@ -260,10 +329,7 @@
     }
     lastLines = lines;
     if (!lines.length) return [];
-    // single-column page (the usual textbook layout): read lines strictly top to bottom
-    const widest = lines.reduce((a, l) => ((l.bbox.x1 - l.bbox.x0) > (a.bbox.x1 - a.bbox.x0) ? l : a), lines[0]).bbox;
-    const inColumn = lines.filter((l) => Math.min(l.bbox.x1, widest.x1) - Math.max(l.bbox.x0, widest.x0) > (l.bbox.x1 - l.bbox.x0) * 0.5).length;
-    if (inColumn >= lines.length * 0.8) lines.sort((a, b) => (a.bbox.y0 + a.bbox.y1) - (b.bbox.y0 + b.bbox.y1));
+    orderForReading(lines);
     const medH = medianOf(lines.map((l) => l.wh)) || 20;   // word height: unaffected by a tilted photo
     // baseline height at one shared x, so a tilted photo does not distort line spacing
     const xMid = (Math.min(...lines.map((l) => l.bbox.x0)) + Math.max(...lines.map((l) => l.bbox.x1))) / 2;
