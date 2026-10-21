@@ -29,14 +29,14 @@ jobs:
       - name: Check that it compiles (no Apple account needed)
         if: env.HAS_SIGNING != 'true'
         run: |
-          set -o pipefail
           cd ios
+          set +e
           xcodebuild -project Thendral.xcodeproj -scheme Thendral -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build | xcbeautify || \
-          xcodebuild -project Thendral.xcodeproj -scheme Thendral -configuration Debug \
-            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error|warning: unable|BUILD" | head -80
+            CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
+          status=$?
+          grep -E "error:|warning: .*Thendral/|\*\* BUILD" build.log | head -80
+          exit $status
       - name: Build and send to TestFlight
         if: env.HAS_SIGNING == 'true'
         env:
