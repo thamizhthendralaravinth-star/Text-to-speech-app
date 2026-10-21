@@ -1042,67 +1042,76 @@
   let previewAudio = null;
   const renderChoices = () => {
     document.querySelectorAll('.voice-name').forEach((el) => { el.textContent = voice().name; });
-    const sl = $('style-list');
-    sl.textContent = '';
-    for (const s of STYLES) {
-      const c = document.createElement('div');
-      c.className = 'choice' + (s.id === styleId ? ' on' : '');
-      const pick = document.createElement('button');
-      pick.type = 'button';
-      pick.className = 'pick';
-      pick.setAttribute('role', 'radio');
-      pick.setAttribute('aria-checked', String(s.id === styleId));
-      pick.innerHTML = '<b></b><small></small>';
-      pick.querySelector('b').textContent = s.name;
-      pick.querySelector('small').textContent = s.desc;
-      pick.addEventListener('click', () => {
-        styleId = s.id;
-        settings.set('style', styleId);
-        renderChoices();
-        if (playing && !hasAudio()) speakCurrent();
-        if (native && current && hasAudio() && current.style !== styleId) { toast('Tap “Save page” to record this page in the new style.', 3500); updateAudioChip(); }
-      });
-      c.append(pick);
-      sl.append(c);
-    }
-    const vl = $('voice-list');
-    vl.textContent = '';
-    for (const v of VOICES) {
-      const c = document.createElement('div');
-      c.className = 'choice' + (v.id === voiceId ? ' on' : '');
-      const pick = document.createElement('button');
-      pick.type = 'button';
-      pick.className = 'pick';
-      pick.setAttribute('role', 'radio');
-      pick.setAttribute('aria-checked', String(v.id === voiceId));
-      pick.innerHTML = '<b></b><small></small>';
-      pick.querySelector('b').textContent = v.name;
-      pick.querySelector('small').textContent = v.desc;
-      pick.addEventListener('click', () => {
-        voiceId = v.id;
-        settings.set('kvoice', voiceId);
-        renderChoices();
-        updateBanner();
-        if (native && current && hasAudio() && current.voice !== voiceId) { toast('Tap “Save page” to record this page with ' + v.name + '.', 3500); updateAudioChip(); }
-      });
-      const listen = document.createElement('button');
-      listen.type = 'button';
-      listen.className = 'listen';
-      listen.textContent = '▶';
-      listen.setAttribute('aria-label', 'Listen to ' + v.name);
-      listen.addEventListener('click', () => {
-        pause();
-        if (previewAudio) previewAudio.pause();
-        previewAudio = new Audio(base + 'voices/' + v.id + '.mp3');
-        previewAudio.play().catch(() => toast('Could not play the sample.'));
-      });
-      c.append(pick, listen);
-      vl.append(c);
-    }
-    $('voice-where').textContent = native
-      ? 'Audio is made on this laptop and saved into your Thendral folder, ready for your iPhone.'
-      : 'These voices are made by the Thendral app on your laptop. Pages without laptop audio use this device’s own voice.';
+    document.querySelectorAll('.style-list').forEach((sl) => {
+      sl.textContent = '';
+      for (const st of STYLES) sl.append(styleCard(st));
+    });
+    document.querySelectorAll('.voice-list').forEach((vl) => {
+      vl.textContent = '';
+      for (const v of VOICES) vl.append(voiceCard(v));
+    });
+    document.querySelectorAll('.voice-where').forEach((el) => {
+      el.textContent = native
+        ? 'Audio is made on this laptop and saved into your Thendral folder, ready for your iPhone.'
+        : 'These voices are made by the Thendral app on your laptop. Pages without laptop audio use this device’s own voice.';
+    });
   };
+  const styleCard = (st) => {
+    const c = document.createElement('div');
+    c.className = 'choice' + (st.id === styleId ? ' on' : '');
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'pick';
+    pick.setAttribute('role', 'radio');
+    pick.setAttribute('aria-checked', String(st.id === styleId));
+    pick.innerHTML = '<b></b><small></small>';
+    pick.querySelector('b').textContent = st.name;
+    pick.querySelector('small').textContent = st.desc;
+    pick.addEventListener('click', () => {
+      styleId = st.id;
+      settings.set('style', styleId);
+      renderChoices();
+      if (playing && !hasAudio()) speakCurrent();
+      if (native && current && hasAudio() && current.style !== styleId) toast('Tap “Save page” to record this page in the new style.', 3500);
+      if (current) updateAudioChip();
+    });
+    c.append(pick);
+    return c;
+  };
+  const voiceCard = (v) => {
+    const c = document.createElement('div');
+    c.className = 'choice' + (v.id === voiceId ? ' on' : '');
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'pick';
+    pick.setAttribute('role', 'radio');
+    pick.setAttribute('aria-checked', String(v.id === voiceId));
+    pick.innerHTML = '<b></b><small></small>';
+    pick.querySelector('b').textContent = v.name;
+    pick.querySelector('small').textContent = v.desc;
+    pick.addEventListener('click', () => {
+      voiceId = v.id;
+      settings.set('kvoice', voiceId);
+      renderChoices();
+      updateBanner();
+      if (native && current && hasAudio() && current.voice !== voiceId) toast('Tap “Save page” to record this page with ' + v.name + '.', 3500);
+      if (current) updateAudioChip();
+    });
+    const listen = document.createElement('button');
+    listen.type = 'button';
+    listen.className = 'listen';
+    listen.textContent = '▶';
+    listen.setAttribute('aria-label', 'Listen to ' + v.name);
+    listen.addEventListener('click', () => {
+      pause();
+      if (previewAudio) previewAudio.pause();
+      previewAudio = new Audio(base + 'voices/' + v.id + '.mp3');
+      previewAudio.play().catch(() => toast('Could not play the sample.'));
+    });
+    c.append(pick, listen);
+    return c;
+  };
+
 
   // ---------- wiring ----------
   $('camera').addEventListener('change', (e) => { handleFile(e.target.files[0]); e.target.value = ''; });
@@ -1142,8 +1151,8 @@
     $('more').setAttribute('aria-expanded', String(open));
   };
   $('more').addEventListener('click', (e) => { e.stopPropagation(); menuOpen($('voice-menu').hidden); });
-  document.querySelectorAll('.voice-open').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); menuOpen(true); }));
-  document.addEventListener('click', (e) => { if (!$('voice-menu').hidden && e.target.isConnected && !e.target.closest('#voice-menu, #more, .voice-open')) menuOpen(false); });
+  document.querySelectorAll('.open-voices').forEach((b) => b.addEventListener('click', () => go({ screen: 'settings' })));
+  document.addEventListener('click', (e) => { if (!$('voice-menu').hidden && e.target.isConnected && !e.target.closest('#voice-menu, #more')) menuOpen(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menuOpen(false); });
   $('book-input').addEventListener('change', async () => {
     if (!current) return;

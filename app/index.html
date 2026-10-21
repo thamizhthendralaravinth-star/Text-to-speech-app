@@ -70,6 +70,17 @@
       <button id="close-settings" class="btn green small" type="button">Done</button>
     </div>
 
+    <div class="group">
+      <h3>Voice <span class="hint">tap ▶ to listen, tap the name to choose</span></h3>
+      <div class="choice-grid voice-list" role="radiogroup" aria-label="Voice"></div>
+    </div>
+
+    <div class="group">
+      <h3>Reading style</h3>
+      <div class="choice-grid style-list" role="radiogroup" aria-label="Reading style"></div>
+      <p class="hint-line voice-where"></p>
+    </div>
+
     <div class="group two">
       <div>
         <h3><label for="lang">Page language</label></h3>
@@ -131,7 +142,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 16l5-5 4 4 2-2 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
         Choose image
       </label>
-      <button class="btn pink-soft big voice-open start-voice" type="button">
+      <button class="btn pink-soft big start-voice open-voices" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span>Voices · <b class="voice-name">Bella</b></span>
       </button>
@@ -153,7 +164,7 @@
             <datalist id="book-names"></datalist>
           </label>
           <span id="audio-chip" class="chip"></span>
-          <button class="chip voice-chip voice-open" type="button">
+          <button class="chip voice-chip open-voices" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             Voice: <b class="voice-name">Bella</b> ▾
           </button>
@@ -243,10 +254,10 @@
 
 <div id="voice-menu" class="menu" role="dialog" aria-label="Voice and reading style" hidden>
   <div class="menu-head"><b>Voice</b><span class="hint">tap ▶ to listen</span></div>
-  <div id="voice-list" class="menu-list" role="radiogroup" aria-label="Voice"></div>
+  <div class="menu-list voice-list" role="radiogroup" aria-label="Voice"></div>
   <div class="menu-head"><b>Reading style</b></div>
-  <div id="style-list" class="menu-list" role="radiogroup" aria-label="Reading style"></div>
-  <p id="voice-where" class="hint-line"></p>
+  <div class="menu-list style-list" role="radiogroup" aria-label="Reading style"></div>
+  <p class="hint-line voice-where"></p>
 </div>
 
 <audio id="audio" preload="auto" playsinline></audio>
