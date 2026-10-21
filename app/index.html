@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thendral Text-to-Speech</title>
+<meta name="description" content="Take a photo of a textbook page and hear it read aloud. Works offline.">
+<meta name="theme-color" content="#1f4e5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Thendral">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <img class="brand-mark" src="icons/icon-192.png" alt="" width="28" height="28">
+    <span class="brand-name">Thendral Text-to-Speech</span>
+  </div>
+  <span id="offline" class="pill" hidden>Offline ready</span>
+</header>
+
+<main class="wrap">
+  <section class="capture" aria-label="Add a page">
+    <div class="capture-buttons">
+      <label class="btn primary big" for="camera">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        Take photo
+      </label>
+      <input id="camera" type="file" accept="image/*" capture="environment" hidden>
+      <label class="btn big" for="picker">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 16l5-5 4 4 2-2 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        Choose image
+      </label>
+      <input id="picker" type="file" accept="image/*" hidden>
+    </div>
+
+    <div class="lang" role="radiogroup" aria-label="Text language">
+      <span class="label">Page language</span>
+      <div class="seg">
+        <input type="radio" name="lang" id="lang-eng" value="eng" checked><label for="lang-eng">English</label>
+        <input type="radio" name="lang" id="lang-tam" value="tam"><label for="lang-tam">தமிழ்</label>
+        <input type="radio" name="lang" id="lang-both" value="eng+tam"><label for="lang-both">Both</label>
+      </div>
+    </div>
+
+    <div class="lang">
+      <label class="label" for="voice">Voice</label>
+      <select id="voice"></select>
+    </div>
+
+    <p class="hint">Hold the phone flat over the page, in good light, so the text fills the frame. On a laptop you can also drag an image here or paste one.</p>
+  </section>
+
+  <section id="status" class="status" hidden>
+    <img id="preview" alt="Photo being read">
+    <div class="status-body">
+      <div id="status-text">Reading the page…</div>
+      <div class="meter"><div id="meter-fill"></div></div>
+    </div>
+  </section>
+
+  <section class="reader" aria-label="Text">
+    <div class="reader-head">
+      <h2 id="page-title">Text</h2>
+      <div class="tabs">
+        <button id="view-read" class="tab on" type="button">Text</button>
+        <button id="view-photo" class="tab" type="button">Photo</button>
+        <button id="view-edit" class="tab" type="button">Edit</button>
+      </div>
+    </div>
+    <div id="readview" class="readview" lang="en"></div>
+    <div id="photoview" class="photoview" hidden><img id="photo-full" alt="Saved photo of the page"></div>
+    <textarea id="editview" class="editview" spellcheck="true" hidden aria-label="Edit recognised text"></textarea>
+    <p id="voice-note" class="note" hidden></p>
+  </section>
+
+  <section class="history" aria-label="Saved pages">
+    <h2>Saved pages</h2>
+    <ul id="history-list"></ul>
+    <p id="history-empty" class="muted">Pages you scan are kept on this device so you can listen again later.</p>
+  </section>
+</main>
+
+<footer class="player" aria-label="Playback">
+  <div class="player-inner">
+    <button id="back" class="icon-btn" type="button" aria-label="Previous sentence">
+      <svg viewBox="0 0 24 24"><path d="M6 6v12M18 6l-9 6 9 6z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="play" class="play" type="button" aria-label="Play">
+      <svg id="ico-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>
+      <svg id="ico-pause" viewBox="0 0 24 24" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+    </button>
+    <button id="fwd" class="icon-btn" type="button" aria-label="Next sentence">
+      <svg viewBox="0 0 24 24"><path d="M18 6v12M6 6l9 6-9 6z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="player-opts">
+      <div class="speed" role="group" aria-label="Reading speed">
+        <button id="slower" class="speed-btn" type="button" aria-label="Slower">−</button>
+        <output id="rate-out" class="rate-out">1.0×</output>
+        <button id="faster" class="speed-btn" type="button" aria-label="Faster">+</button>
+      </div>
+      <div class="presets">
+          <button type="button" data-rate="0.75">0.75×</button>
+          <button type="button" data-rate="1">1×</button>
+          <button type="button" data-rate="1.25">1.25×</button>
+          <button type="button" data-rate="1.5">1.5×</button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="vendor/tesseract.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

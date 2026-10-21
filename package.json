@@ -1,0 +1,53 @@
+{
+  "name": "thendral-tts",
+  "productName": "Thendral Text-to-Speech",
+  "version": "1.0.0",
+  "description": "Take a photo of a textbook page and hear it read aloud. Works offline.",
+  "main": "electron/main.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "vendor": "node scripts/copy-vendor.js",
+    "start": "electron .",
+    "serve": "npx --yes http-server@14.1.1 app -p 8080 -c-1",
+    "dist:win": "electron-builder --win nsis portable"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/tam": "^1.0.0",
+    "tesseract.js": "^6.0.1",
+    "tesseract.js-core": "^6.0.0"
+  },
+  "devDependencies": {
+    "electron": "37.10.3",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.thendral.tts",
+    "productName": "Thendral Text-to-Speech",
+    "files": [
+      "app/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "icon": "electron/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Thendral"
+    },
+    "portable": {
+      "artifactName": "Thendral-Portable-${version}.exe"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
