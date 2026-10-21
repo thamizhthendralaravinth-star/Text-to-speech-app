@@ -8,9 +8,10 @@ Take a photo of a textbook page and hear it read aloud. Everything runs on your 
 - Each page is saved with its photo, text, speed and voice, and resumes where you stopped
 
 ## iPhone (Home Screen app)
-1. Push this repo to GitHub, then go to Settings → Pages → Source and choose **GitHub Actions**.
-2. Open the published link in **Safari** on the iPhone and wait for "OFFLINE READY".
-3. Tap Share → **Add to Home Screen**. From then on it works in flight mode.
+1. Settings → Pages → Source: **GitHub Actions** (the "Publish iPhone app" workflow then runs on every push).
+2. On the iPhone, open the published link in **Safari** and wait a few seconds so the app stores itself for offline use.
+3. Tap Share → **Add to Home Screen** → Add. It opens full-screen and works in flight mode.
+4. Pages recorded by the Windows app: save the `.thendral.json`, `.mp3` and `.jpg` files to Files, then Library → **Import from folder** and select all three.
 
 ## Windows
 Go to Actions → **Build Windows app** → Run workflow, then download `Thendral-Windows` (an installer and a portable .exe).

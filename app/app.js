@@ -278,18 +278,41 @@
   };
 
   // ---------- sentences ----------
-  const buildUnits = (paras) => {
+  const LEGACY_END = /[.!?।:;]["')\]]*$/;   // sentence rule used before October 2026 recordings
+  const buildUnits = (paras, ends = endsSentence) => {
     const out = [];
     paras.forEach((para, pi) => {
       let sent = [];
       const flush = () => { if (sent.length) out.push({ pi, toks: sent }); sent = []; };
       for (const k of para.tokens) {
         sent.push(k);
-        if (endsSentence(k.t) || sent.length > 45) flush();
+        if (ends(k.t) || sent.length > 45) flush();
       }
       flush();
     });
     return out;
+  };
+  // A recording keeps the sentence split it was made with, so later rule changes never break its timing.
+  const unitsFor = (page) => {
+    if (page.split && page.split.length) {
+      const out = [];
+      let n = 0;
+      page.paras.forEach((para, pi) => {
+        let i = 0;
+        while (i < para.tokens.length && n < page.split.length) {
+          const len = page.split[n++];
+          out.push({ pi, toks: para.tokens.slice(i, i + len) });
+          i += len;
+        }
+      });
+      if (out.length === page.split.length) return out;
+    }
+    const now = buildUnits(page.paras);
+    if (page.timings && page.timings.length !== now.length) {
+      const old = buildUnits(page.paras, (t) => LEGACY_END.test(t) && !ABBREV.test(t.replace(/^[("'[]+/, '')));
+      if (old.length === page.timings.length) return old;
+    }
+    return now;
   };
 
   // ---------- page view ----------
@@ -332,7 +355,7 @@
       updateWhere();
       return;
     }
-    const built = buildUnits(current.paras);
+    const built = unitsFor(current);
     const tamilVoice = !!pickDeviceVoice(true);
     let skipped = 0;
     const pEls = current.paras.map((para, pi) => {
@@ -748,6 +771,7 @@
       });
       page.audio = new Blob([res.mp3], { type: 'audio/mpeg' });
       page.timings = res.timings;
+      page.split = built.map((b) => b.toks.length);
       page.voice = v.id;
       page.style = st.id;
       await db.put(page);
@@ -767,7 +791,7 @@
 
   const bundleJSON = (p) => JSON.stringify({
     app: 'thendral', v: 1, id: p.id, title: p.title, book: bookOf(p), created: p.created, lang: p.lang,
-    paras: p.paras, timings: p.timings || null, voice: p.voice || null, style: p.style || null,
+    paras: p.paras, timings: p.timings || null, split: p.split || null, voice: p.voice || null, style: p.style || null,
     audioFile: p.audio ? fileBase(p) + '.mp3' : null, photoFile: p.photo ? fileBase(p) + '.jpg' : null,
   });
 
@@ -855,7 +879,7 @@
         if (jpg) { try { thumb = await toBlob(draw(await loadBitmap(jpg), 200), 0.7); } catch { /* keep going */ } }
         const rec = {
           id: data.id, created: data.created, title: data.title, book: data.book, lang: data.lang, paras: data.paras,
-          timings: mp3 ? data.timings : null, voice: data.voice, style: data.style,
+          timings: mp3 ? data.timings : null, split: data.split || null, voice: data.voice, style: data.style,
           audio: mp3 ? new Blob([await mp3.arrayBuffer()], { type: 'audio/mpeg' }) : null,
           photo: jpg ? new Blob([await jpg.arrayBuffer()], { type: 'image/jpeg' }) : null,
           thumb, pos: 0,
@@ -889,7 +913,7 @@
       if (old && paraText(old) === t) return old;     // unchanged: keep word positions
       return { tokens: t.split(/\s+/).map((x) => ({ t: x, b: null })), box: old ? old.box : null, heading: old ? old.heading : false };
     });
-    if (changed) { current.audio = null; current.timings = null; }   // audio no longer matches the text
+    if (changed) { current.audio = null; current.timings = null; current.split = null; }   // audio no longer matches the text
     current.title = titleOf(current.paras);
     current.pos = 0;
     db.put(current).then(renderLibrary);
@@ -1253,7 +1277,7 @@
   });
 
   // ---------- offline install ----------
-  if ('serviceWorker' in navigator && location.protocol === 'https:' && !/claude\.ai|claudeusercontent/.test(location.host)) {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost') && !/claude\.ai|claudeusercontent/.test(location.host)) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 })();
