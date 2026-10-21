@@ -1,10 +1,14 @@
 name: Build Windows app
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['app/**', 'electron/**', 'package.json', 'package-lock.json', 'scripts/**', '.github/workflows/windows.yml']
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: windows-build
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: windows-latest
@@ -21,7 +25,11 @@ jobs:
         with:
           name: Thendral-Windows
           path: dist/*.exe
-      - if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      # every build becomes the "latest release", so the download link never changes
+      - uses: softprops/action-gh-release@v2
         with:
+          tag_name: windows-build-${{ github.run_number }}
+          name: Thendral for Windows (build ${{ github.run_number }})
+          body: Download **Thendral-Setup** to install, or **Thendral-Portable** to run without installing.
+          make_latest: true
           files: dist/*.exe
