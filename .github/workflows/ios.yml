@@ -1,4 +1,5 @@
 name: Build iPhone app
+# macOS runners are sometimes busy; a push to ios/ or this file starts a fresh attempt.
 on:
   push:
     branches: [main]
