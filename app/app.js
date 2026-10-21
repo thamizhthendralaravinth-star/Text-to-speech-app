@@ -242,6 +242,7 @@
 
   // Group OCR lines into paragraphs the way they sit on the printed page:
   // a new paragraph starts at a larger-than-usual gap, a first-line indent, a heading-sized line, or a new column.
+  let lastLines = [];
   const medianOf = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] || 0; };
   const buildParas = (blocks, W, H) => {
     const lines = [];
@@ -257,6 +258,7 @@
       if (meanConf < 45 && words.every((w) => w.text.replace(/[^A-Za-z\u0B80-\u0BFF]/g, '').length <= 3)) continue;
       if (words.length) lines.push({ bbox: l.bbox, words, wh: medianOf(words.map((w) => w.bbox.y1 - w.bbox.y0)), base: l.baseline && l.baseline.x1 > l.baseline.x0 ? l.baseline : null });
     }
+    lastLines = lines;
     if (!lines.length) return [];
     // single-column page (the usual textbook layout): read lines strictly top to bottom
     const widest = lines.reduce((a, l) => ((l.bbox.x1 - l.bbox.x0) > (a.bbox.x1 - a.bbox.x0) ? l : a), lines[0]).bbox;
@@ -309,6 +311,117 @@
     }).filter((p) => p.tokens.length);
   };
 
+  // ---------- reading the photo with Claude (claude.ai only; most accurate) ----------
+  let claudeReader = null;   // {sample, maxCount}
+  if (window.claude && window.claude.use) {
+    window.claude.use('sample').then(async (sample) => {
+      if (!sample) return;
+      const lim = await sample.limits().catch(() => null);
+      if (lim && lim.images) { claudeReader = { sample, maxCount: Math.max(1, Math.min(4, lim.images.maxCount || 1)) }; $('ai-group').hidden = false; }
+    }).catch(() => {});
+  }
+
+  // Cut the text area of the photo into strips (split between lines, never through one) so each strip
+  // stays sharp after Claude's ~1.2-megapixel limit.
+  const photoStrips = async (bmp, lines, ocrW) => {
+    const k = bmp.width / ocrW;
+    const xs0 = Math.min(...lines.map((l) => l.bbox.x0)) * k, xs1 = Math.max(...lines.map((l) => l.bbox.x1)) * k;
+    const ys0 = Math.min(...lines.map((l) => l.bbox.y0)) * k, ys1 = Math.max(...lines.map((l) => l.bbox.y1)) * k;
+    const pad = (ys1 - ys0) * 0.01 + 12;
+    const x0 = Math.max(0, xs0 - pad), x1 = Math.min(bmp.width, xs1 + pad);
+    const y0 = Math.max(0, ys0 - pad), y1 = Math.min(bmp.height, ys1 + pad);
+    const wordH = medianOf(lines.map((l) => l.wh)) * k || 20;
+    const scale = Math.min(1, 30 / wordH);                       // about 30 px per line of text is plenty
+    const area = (x1 - x0) * (y1 - y0) * scale * scale;
+    const n = Math.max(1, Math.min(claudeReader.maxCount, Math.ceil(area / 1.1e6)));
+    const sorted = [...lines].sort((a, b) => a.bbox.y0 - b.bbox.y0);
+    const cuts = [y0];
+    for (let i = 1; i < n; i++) {
+      const target = y0 + ((y1 - y0) * i) / n;
+      let best = target, bestD = Infinity;
+      for (let j = 1; j < sorted.length; j++) {
+        const mid = ((sorted[j - 1].bbox.y1 + sorted[j].bbox.y0) / 2) * k;
+        if (Math.abs(mid - target) < bestD) { bestD = Math.abs(mid - target); best = mid; }
+      }
+      cuts.push(best);
+    }
+    cuts.push(y1);
+    const blobs = [];
+    for (let i = 0; i < n; i++) {
+      const sy = cuts[i], sh = cuts[i + 1] - cuts[i];
+      if (sh < 10) continue;
+      const fit = Math.min(scale, Math.sqrt(1.15e6 / ((x1 - x0) * sh)));
+      const c = document.createElement('canvas');
+      c.width = Math.round((x1 - x0) * fit);
+      c.height = Math.round(sh * fit);
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, x0, sy, x1 - x0, sh, 0, 0, c.width, c.height);
+      blobs.push(await toBlob(c, 0.92));
+    }
+    return blobs;
+  };
+
+  const readWithClaude = async (bmp, lines, ocrW, langs) => {
+    const strips = await photoStrips(bmp, lines, ocrW);
+    const many = strips.length > 1;
+    const prompt = [
+      'You are transcribing a page of a printed medical textbook that a doctor photographed with a phone.',
+      many ? `The ${strips.length} images are consecutive horizontal strips of the same page, in order from top to bottom, with no overlap.` : 'The image shows the text area of the page.',
+      'Copy the printed text exactly as it is written: the same words, spelling, numbers, units, symbols and punctuation.',
+      'Do not correct, modernise, summarise, explain or add anything. Do not translate.',
+      langs.includes('tam') ? 'The text may be in English, Tamil or both; keep each word in its original script.' : '',
+      'Join the lines of each paragraph into one paragraph, as printed. Re-join a word only when it is hyphenated across a line break.',
+      'Keep headings as their own paragraph and mark them. Leave out page numbers, running headers and footers.',
+      'If a word cannot be read with confidence, write [?] in its place rather than guessing.',
+      'Reply with only JSON in this shape: {"paragraphs":[{"text":"...","heading":false}]}',
+    ].filter(Boolean).join('\n');
+    const out = await claudeReader.sample.json(prompt, { images: strips, modelTier: 'default', cache: false });
+    const list = out && Array.isArray(out.paragraphs) ? out.paragraphs : null;
+    if (!list || !list.length) throw new Error('no paragraphs');
+    return list.map((p) => ({ text: String(p.text || '').replace(/\s+/g, ' ').trim(), heading: !!p.heading })).filter((p) => p.text);
+  };
+
+  // Line Claude's words up with the on-device reader's words, so each word keeps its place on the photo
+  // (for tap-to-read and highlighting). Claude's text always wins; positions come from the match.
+  const keyOf = (t) => t.toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+  const editRatio = (a, b) => {
+    if (a === b) return 0;
+    if (!a.length || !b.length) return 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length] / Math.max(a.length, b.length);
+  };
+  const mergeReadings = (aiParas, ocrParas) => {
+    const ocr = [];
+    ocrParas.forEach((p) => p.tokens.forEach((t) => ocr.push({ k: keyOf(t.t), b: t.b })));
+    const ai = [];
+    aiParas.forEach((p, pi) => p.text.split(' ').forEach((t) => ai.push({ t, k: keyOf(t), pi })));
+    const n = ai.length, m = ocr.length;
+    // global alignment; a close spelling counts as a match
+    const cost = (i, j) => (editRatio(ai[i].k, ocr[j].k) <= 0.4 ? 0 : 1.6);
+    const D = Array.from({ length: n + 1 }, () => new Float32Array(m + 1));
+    for (let i = 1; i <= n; i++) D[i][0] = i;
+    for (let j = 1; j <= m; j++) D[0][j] = j;
+    for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + cost(i - 1, j - 1));
+    let i = n, j = m;
+    while (i > 0 && j > 0) {
+      if (D[i][j] === D[i - 1][j - 1] + cost(i - 1, j - 1)) { if (cost(i - 1, j - 1) === 0) ai[i - 1].b = ocr[j - 1].b; i--; j--; }
+      else if (D[i][j] === D[i - 1][j] + 1) i--;
+      else j--;
+    }
+    return aiParas.map((p, pi) => {
+      const toks = ai.filter((x) => x.pi === pi);
+      const boxes = toks.map((x) => x.b).filter(Boolean);
+      const box = boxes.length ? [Math.min(...boxes.map((b) => b[0])), Math.min(...boxes.map((b) => b[1])), Math.max(...boxes.map((b) => b[2])), Math.max(...boxes.map((b) => b[3]))] : null;
+      return { tokens: toks.map((x) => ({ t: x.t, b: x.b || null })), box, heading: p.heading };
+    });
+  };
+
   const handleFile = async (file) => {
     if (!file || !file.type.startsWith('image/')) { toast('Please choose a photo or image file.'); return; }
     stop();
@@ -321,7 +434,21 @@
       const ocrCanvas = prepareForReading(bmp);
       const w = await getWorker(langs);
       const { data } = await w.recognize(ocrCanvas, {}, { blocks: true, text: true });
-      const paras = buildParas(data.blocks, ocrCanvas.width, ocrCanvas.height);
+      let paras = buildParas(data.blocks, ocrCanvas.width, ocrCanvas.height);
+      let readBy = 'device';
+      if (claudeReader && settings.get('aiRead', true) && paras.length) {
+        try {
+          setProgress('Claude is checking every word against the photo…', 0.95);
+          const lines = lastLines;
+          const ai = await readWithClaude(bmp, lines, ocrCanvas.width, langs);
+          paras = mergeReadings(ai, paras);
+          readBy = 'claude';
+        } catch (err) {
+          console.warn('Claude reading unavailable', err);
+          if (err && err.code === 'not_granted') { settings.set('aiRead', false); $('ai-read').checked = false; }
+          toast('Read on this device only' + (err && err.code === 'not_granted' ? ' (Claude was not allowed).' : '. Claude could not be reached.'), 4000);
+        }
+      }
       if (!paras.length) { setProgress('No text found. Try again closer to the page, in brighter light.', 0); return; }
       const page = {
         id: String(Date.now()),
@@ -329,7 +456,8 @@
         title: titleOf(paras),
         book: settings.get('lastBook', 'My pages'),
         paras, lang: langs, photo, thumb, pos: 0,
-        confidence: Math.round(data.confidence || 0),
+        confidence: readBy === 'claude' ? 100 : Math.round(data.confidence || 0),
+        readBy,
       };
       await db.put(page);
       hideProgress();
@@ -392,7 +520,7 @@
     }
     current = page;
     $('page-title').textContent = page.title;
-    $('page-meta').textContent = `Saved ${fmtDate(page.created)} · ${page.paras.length} paragraph${page.paras.length === 1 ? '' : 's'}`;
+    $('page-meta').textContent = `Saved ${fmtDate(page.created)} · ${page.paras.length} paragraph${page.paras.length === 1 ? '' : 's'}${page.readBy === 'claude' ? ' · words checked by Claude' : ''}`;
     $('doc').hidden = false;
     $('doc-tools').hidden = false;
     $('book-input').value = bookOf(page);
@@ -1232,6 +1360,8 @@
     if (item) handleFile(item.getAsFile());
   });
 
+  $('ai-read').checked = settings.get('aiRead', true);
+  $('ai-read').addEventListener('change', () => settings.set('aiRead', $('ai-read').checked));
   $('lang').value = settings.get('lang', 'eng');
   $('lang').addEventListener('change', () => settings.set('lang', $('lang').value));
   const tapSaved = settings.get('tapmode', 'on');

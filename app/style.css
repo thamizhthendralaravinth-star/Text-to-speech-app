@@ -133,6 +133,10 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .seg label + input + label { border-left: 1px solid var(--line); }
 .seg input:checked + label { background: var(--blue); color: var(--on-color); }
 .folder-path { margin: 0; padding: 8px 10px; background: var(--bg); border-radius: 8px; font: 13px/1.4 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.toggle { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; }
+.toggle input { width: 22px; height: 22px; accent-color: var(--green); margin-top: 2px; flex: none; }
+.toggle span { display: grid; gap: 2px; }
+.toggle small { color: var(--muted); font-size: 13px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- shell ---------- */
