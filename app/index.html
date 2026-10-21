@@ -19,6 +19,17 @@
 <!--APP-->
 <header class="top">
   <div class="top-inner">
+    <div class="nav">
+      <button id="nav-back" class="nav-btn" type="button" disabled aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Back</span>
+      </button>
+      <button id="nav-fwd" class="nav-btn" type="button" disabled aria-label="Forward">
+        <span>Forward</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div id="screen-title" class="screen-title" hidden></div>
     <div class="brand">
       <img src="icons/icon-192.png" alt="" width="34" height="34">
       <div>
@@ -52,22 +63,11 @@
 <input id="importer" type="file" multiple accept=".json,.mp3,.jpg,.jpeg,audio/mpeg,image/jpeg,application/json" hidden>
 
 <!-- Settings sheet -->
-<section id="settings" class="sheet" hidden aria-label="Settings">
+<section id="settings" class="sheet" aria-label="Settings">
   <div class="sheet-inner">
     <div class="sheet-head">
       <h2>Settings</h2>
-      <button id="close-settings" class="btn ghost small" type="button">Done</button>
-    </div>
-
-    <div class="group">
-      <h3>Reading style</h3>
-      <div id="style-list" class="choice-grid" role="radiogroup" aria-label="Reading style"></div>
-    </div>
-
-    <div class="group">
-      <h3>Voice <span class="hint">tap ▶ to listen</span></h3>
-      <div id="voice-list" class="choice-grid" role="radiogroup" aria-label="Voice"></div>
-      <p id="voice-where" class="hint-line"></p>
+      <button id="close-settings" class="btn green small" type="button">Done</button>
     </div>
 
     <div class="group two">
@@ -138,10 +138,10 @@
       <div class="meter"><div id="meter-fill"></div></div>
     </div>
 
-    <section class="doc card">
+    <section id="doc" class="doc card" hidden>
       <div class="doc-head">
-        <h1 id="page-title">Start with a photo</h1>
-        <p id="page-meta" class="meta">Photograph a textbook page. The photo and its text appear side by side, paragraph for paragraph.</p>
+        <h1 id="page-title"></h1>
+        <p id="page-meta" class="meta"></p>
         <div id="doc-tools" class="doc-tools" hidden>
           <label class="chip pink-chip" for="book-input">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
@@ -150,9 +150,13 @@
           </label>
           <span id="audio-chip" class="chip"></span>
           <span class="spacer"></span>
-          <button id="save-audio" class="btn blue small" type="button">Save audio</button>
           <button id="edit-toggle" class="btn ghost small" type="button">Edit text</button>
         </div>
+      </div>
+
+      <div id="voice-banner" class="banner" hidden>
+        <p id="voice-banner-text"></p>
+        <button id="voice-banner-ok" class="btn pink small" type="button">Got it</button>
       </div>
 
       <div class="view-tabs narrow-only" role="tablist" aria-label="View">
@@ -163,21 +167,16 @@
 
       <div id="panes" class="panes">
         <section class="pane photo-pane" aria-label="Photo">
-          <div class="pane-label">Photo <span>· tap a paragraph to hear it</span></div>
           <div id="photo-scroll" class="photo-scroll">
             <div id="photo-wrap" class="photo-wrap" hidden>
               <img id="photo" alt="Photo of the textbook page">
               <div id="boxes" class="boxes"></div>
             </div>
-            <div id="photo-empty" class="photo-empty">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
-              <p>Hold the phone flat over the page, in good light, so the text fills the frame.</p>
-            </div>
+            <div id="photo-empty" class="photo-empty" hidden></div>
           </div>
         </section>
 
         <section class="pane text-pane" aria-label="Text">
-          <div class="pane-label">Text</div>
           <article id="readview" class="readview" lang="en"></article>
           <div id="editbox" hidden>
             <textarea id="editview" class="editview" spellcheck="true" aria-label="Edit recognised text"></textarea>
@@ -186,6 +185,14 @@
           <p id="voice-note" class="hint-line" hidden></p>
         </section>
       </div>
+
+      <div class="save-section">
+        <button id="save-page" class="btn green save-one" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 3v5h7V3M8 21v-7h8v7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span><b id="save-page-label">Save page</b><small>Photo, text and audio together</small></span>
+        </button>
+        <p id="save-where" class="hint-line"></p>
+</div>
     </section>
   </main>
 </div>
@@ -204,24 +211,35 @@
       </div>
       <div class="transport">
         <button id="back" class="icon-btn" type="button" aria-label="Previous paragraph">
-          <svg viewBox="0 0 24 24"><path d="M6 6v12M18 6l-9 6 9 6z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="6" width="2.5" height="12" rx="1" fill="currentColor"/><path d="M19 6v12l-10-6z" fill="currentColor"/></svg>
         </button>
         <button id="play" class="play" type="button" aria-label="Play">
-          <svg id="ico-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>
-          <svg id="ico-pause" viewBox="0 0 24 24" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+          <span id="ico-play" class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5v15l12-7.5z" fill="currentColor"/></svg></span>
+          <span id="ico-pause" class="ico" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg></span>
         </button>
         <button id="fwd" class="icon-btn" type="button" aria-label="Next paragraph">
-          <svg viewBox="0 0 24 24"><path d="M18 6v12M6 6l9 6-9 6z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="16.5" y="6" width="2.5" height="12" rx="1" fill="currentColor"/><path d="M5 6v12l10-6z" fill="currentColor"/></svg>
         </button>
       </div>
       <div class="speed" role="group" aria-label="Reading speed">
         <button id="slower" class="speed-btn" type="button" aria-label="Slower">−</button>
         <button id="rate-out" class="rate-out" type="button" aria-label="Speed, tap to cycle">1.0×</button>
         <button id="faster" class="speed-btn" type="button" aria-label="Faster">+</button>
+        <button id="more" class="more-btn" type="button" aria-label="Voice and reading style" aria-haspopup="dialog" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.2" fill="currentColor"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><circle cx="12" cy="19" r="2.2" fill="currentColor"/></svg>
+        </button>
       </div>
     </div>
   </div>
 </footer>
+
+<div id="voice-menu" class="menu" role="dialog" aria-label="Voice and reading style" hidden>
+  <div class="menu-head"><b>Voice</b><span class="hint">tap ▶ to listen</span></div>
+  <div id="voice-list" class="menu-list" role="radiogroup" aria-label="Voice"></div>
+  <div class="menu-head"><b>Reading style</b></div>
+  <div id="style-list" class="menu-list" role="radiogroup" aria-label="Reading style"></div>
+  <p id="voice-where" class="hint-line"></p>
+</div>
 
 <audio id="audio" preload="auto" playsinline></audio>
 <div id="toast" class="toast" role="status" hidden></div>

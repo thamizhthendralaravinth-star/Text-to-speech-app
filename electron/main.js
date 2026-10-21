@@ -66,8 +66,19 @@ ipcMain.handle('thendral:save', (_e, b) => {
   const base = safeName(b.base);
   if (b.mp3) fs.writeFileSync(path.join(dir, base + '.mp3'), Buffer.from(b.mp3));
   if (b.photo) fs.writeFileSync(path.join(dir, base + '.jpg'), Buffer.from(b.photo));
+  if (b.text) fs.writeFileSync(path.join(dir, base + '.txt'), b.text);
   fs.writeFileSync(path.join(dir, base + '.thendral.json'), b.json);
   return { dir, base };
+});
+
+ipcMain.handle('thendral:saveFile', (_e, f) => {
+  // f: {book, name, data (Uint8Array) | text}
+  const dir = path.join(folder(), safeName(f.book || 'My pages'));
+  fs.mkdirSync(dir, { recursive: true });
+  const ext = path.extname(f.name);
+  const file = path.join(dir, safeName(path.basename(f.name, ext)) + ext);
+  fs.writeFileSync(file, f.text != null ? f.text : Buffer.from(f.data));
+  return { file };
 });
 
 ipcMain.handle('thendral:chooseFolder', async (e) => {

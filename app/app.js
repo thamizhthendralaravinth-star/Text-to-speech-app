@@ -263,6 +263,7 @@
       await db.put(page);
       hideProgress();
       openPage(page);
+      go({ screen: 'page', pageId: page.id });
       renderLibrary();
       if (page.confidence && page.confidence < 60) toast('Some words may be wrong. Retake in better light, or fix them with Edit text.', 4000);
       if (native && nativeInfo && nativeInfo.voiceReady) makeAudio(page);
@@ -298,6 +299,7 @@
     current = page;
     $('page-title').textContent = page.title;
     $('page-meta').textContent = `Saved ${fmtDate(page.created)} · ${page.paras.length} paragraph${page.paras.length === 1 ? '' : 's'}`;
+    $('doc').hidden = false;
     $('doc-tools').hidden = false;
     $('book-input').value = bookOf(page);
     $('edit-toggle').textContent = 'Edit text';
@@ -312,8 +314,8 @@
     renderBoxes();
     loadAudio();
     updateAudioChip();
-    closeLibrary();
     renderLibrary();
+    updateBanner();
     $('np-title').textContent = page.title;
   };
 
@@ -323,10 +325,7 @@
     units = [];
     paraEls = [];
     if (!current) {
-      const p = document.createElement('p');
-      p.className = 'empty';
-      p.textContent = 'The text of your page appears here, in the same paragraphs as the photo. Tap ▶ to hear it from the top, or tap any paragraph to hear that part.';
-      view.append(p);
+      $('doc').hidden = true;
       updateWhere();
       return;
     }
@@ -703,6 +702,8 @@
     qi = i;
     page.pos = 0;
     openPage(page, { keepQueue: true });
+    if (nav.stack[nav.i].screen !== 'page') go({ screen: 'page', pageId: page.id });
+    else nav.stack[nav.i] = { screen: 'page', pageId: page.id };
     idx = 0;
     if (hasAudio()) audio.currentTime = 0;
     begin();
@@ -718,7 +719,7 @@
   const makeAudio = async (page) => {
     if (!native || making) return;
     making = true;
-    $('save-audio').disabled = true;
+    $('save-page').disabled = true;
     const built = buildUnits(page.paras);
     const st = style();
     const v = voice();
@@ -752,7 +753,7 @@
       setProgress('Could not make the audio: ' + (err.message || err), 0);
     } finally {
       making = false;
-      $('save-audio').disabled = false;
+      $('save-page').disabled = false;
     }
   };
 
@@ -762,6 +763,8 @@
     audioFile: p.audio ? fileBase(p) + '.mp3' : null, photoFile: p.photo ? fileBase(p) + '.jpg' : null,
   });
 
+  const pageText = (p) => p.title + '\n\n' + p.paras.map(paraText).join('\n\n') + '\n';
+
   const saveToFolder = async (p) => {
     if (!native) return false;
     await native.savePage({
@@ -770,28 +773,42 @@
       mp3: p.audio ? new Uint8Array(await p.audio.arrayBuffer()) : null,
       photo: p.photo ? new Uint8Array(await p.photo.arrayBuffer()) : null,
       json: bundleJSON(p),
+      text: pageText(p),
     });
     return true;
   };
 
-  // phone: hand the MP3 to the share sheet (Save to Files, AirDrop, WhatsApp…)
-  const shareAudio = async () => {
-    if (!current || !current.audio) {
-      toast('This page has no saved audio yet. Make it with the Thendral app on your laptop, then import it.', 4500);
+
+  // ---------- save text / photo ----------
+  const shareFile = async (files) => {
+    if (navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files, title: current.title }); return true; } catch { return false; }
+    }
+    return null;   // this browser cannot hand files to the share sheet
+  };
+  // one button: photo + text + audio together
+  const savePage = async () => {
+    if (!current) return;
+    if (native) {
+      if (hasAudio() && current.voice === voiceId && current.style === styleId) {
+        await saveToFolder(current);
+        toast(`Saved to Thendral › ${bookOf(current)}: photo, text and audio`, 4000);
+      } else {
+        makeAudio(current);   // records with the chosen voice, then saves everything
+      }
       return;
     }
-    const file = new File([current.audio], fileBase(current) + '.mp3', { type: 'audio/mpeg' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: current.title }); } catch { /* cancelled */ }
-    } else {
-      toast('This browser cannot save files directly. The MP3 is already in your Thendral folder.', 4500);
-    }
+    const files = [new File([pageText(current)], fileBase(current) + '.txt', { type: 'text/plain' })];
+    if (current.photo) files.unshift(new File([current.photo], fileBase(current) + '.jpg', { type: 'image/jpeg' }));
+    if (current.audio) files.push(new File([current.audio], fileBase(current) + '.mp3', { type: 'audio/mpeg' }));
+    const r = await shareFile(files);
+    if (r === null) toast('This browser cannot save files here. On the laptop app, Save page puts everything in your Thendral folder.', 5000);
+    else if (r && !current.audio) toast('Saved photo and text. Audio comes from the laptop app.', 4000);
   };
 
   const updateAudioChip = () => {
     const chip = $('audio-chip');
-    const btn = $('save-audio');
-    if (!current) return;
+        if (!current) return;
     if (hasAudio()) {
       const v = VOICES.find((x) => x.id === current.voice);
       const s = STYLES.find((x) => x.id === current.style);
@@ -801,8 +818,13 @@
       chip.className = 'chip';
       chip.textContent = native ? 'No audio yet' : 'Phone voice (make audio on laptop)';
     }
-    if (native) btn.textContent = hasAudio() ? 'Remake audio' : 'Make & save audio';
-    else btn.textContent = 'Save MP3';
+    const label = $('save-page-label');
+    if (native) label.textContent = !hasAudio() ? 'Save page' : (current.voice !== voiceId || current.style !== styleId) ? `Save page with ${voice().name}` : 'Save page';
+    else label.textContent = 'Save page';
+    $('save-where').textContent = native
+      ? `Photo, text and ${voice().name}'s audio go into your Thendral folder › ${bookOf(current)}`
+      : 'Opens the share sheet. Choose “Save to Files” to keep the photo, text and audio together.';
+    updateBanner();
   };
 
   // ---------- import (iPhone: pages from the Thendral folder) ----------
@@ -837,7 +859,7 @@
       } catch (err) { console.error(err); }
     }
     hideProgress();
-    if (first) openPage(first); else await renderLibrary();
+    if (first) { openPage(first); go({ screen: 'page', pageId: first.id }); } else await renderLibrary();
     toast(count ? `Imported ${count} page${count > 1 ? 's' : ''}. They now play offline.` : 'Nothing could be imported from those files.', 4000);
   };
 
@@ -871,7 +893,7 @@
     renderBoxes();
     loadAudio();
     updateAudioChip();
-    if (changed && native) toast('Text changed. Tap “Make & save audio” to update the recording.', 4000);
+    if (changed && native) toast('Text changed. Tap “Save page” at the bottom to update the recording.', 4000);
   };
 
   // ---------- library ----------
@@ -932,7 +954,7 @@
         small.append(fmtDate(page.created));
         label.append(t, small);
         open.append(img, label);
-        open.addEventListener('click', () => { if (selecting) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } else openPage(page); });
+        open.addEventListener('click', () => { if (selecting) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } else { openPage(page); go({ screen: 'page', pageId: page.id }); } });
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'del';
@@ -959,8 +981,62 @@
     $('select-count').textContent = `${selected.size} selected`;
     $('play-selected').disabled = !selected.size;
   };
-  const openLibrary = () => { $('library').classList.add('open'); $('open-library').setAttribute('aria-expanded', 'true'); };
-  const closeLibrary = () => { $('library').classList.remove('open'); $('open-library').setAttribute('aria-expanded', 'false'); };
+  // ---------- screens with Back / Forward ----------
+  const nav = { stack: [{ screen: 'page', pageId: null }], i: 0 };
+  const inFrame = window.top !== window;
+  const applyScreen = (e) => {
+    const changed = document.body.dataset.screen !== e.screen;
+    document.body.dataset.screen = e.screen;
+    $('nav-back').disabled = nav.i === 0;
+    $('nav-fwd').disabled = nav.i >= nav.stack.length - 1;
+    const title = e.screen === 'library' ? 'Library' : e.screen === 'settings' ? 'Settings' : '';
+    $('screen-title').textContent = title;
+    $('screen-title').hidden = !title;
+    $('open-library').setAttribute('aria-expanded', String(e.screen === 'library'));
+    $('open-settings').setAttribute('aria-expanded', String(e.screen === 'settings'));
+    if (changed) window.scrollTo(0, 0);
+  };
+  const show = async (e) => {
+    if (e.pageId && (!current || current.id !== e.pageId)) {
+      const p = (await db.all()).find((x) => x.id === e.pageId);
+      if (p) openPage(p);
+    }
+    applyScreen(e);
+  };
+  const go = (entry) => {
+    const cur = nav.stack[nav.i];
+    if (cur.screen === entry.screen && (entry.pageId === undefined || cur.pageId === entry.pageId)) { applyScreen(cur); return; }
+    if (entry.pageId === undefined) entry.pageId = current ? current.id : null;
+    nav.stack = nav.stack.slice(0, nav.i + 1);
+    nav.stack.push(entry);
+    nav.i++;
+    show(entry);
+    if (!inFrame) { try { history.pushState({ thendral: nav.i }, ''); } catch { /* ignore */ } }
+  };
+  const back = () => { if (nav.i > 0) { nav.i--; show(nav.stack[nav.i]); } };
+  const forward = () => { if (nav.i < nav.stack.length - 1) { nav.i++; show(nav.stack[nav.i]); } };
+  window.addEventListener('popstate', (ev) => {   // phone back gesture in the installed app
+    const target = ev.state && typeof ev.state.thendral === 'number' ? ev.state.thendral : 0;
+    if (target !== nav.i && target >= 0 && target < nav.stack.length) { nav.i = target; show(nav.stack[nav.i]); }
+  });
+  $('nav-back').addEventListener('click', () => (inFrame ? back() : history.back()));
+  $('nav-fwd').addEventListener('click', () => (inFrame ? forward() : history.forward()));
+  if (!inFrame) { try { history.replaceState({ thendral: 0 }, ''); } catch { /* ignore */ } }
+
+  // ---------- "your voice comes from the laptop" notice ----------
+  const updateBanner = () => {
+    const show = !native && !!current && !hasAudio() && !settings.get('bannerOk', false);
+    $('voice-banner').hidden = !show;
+    if (show) {
+      const v = voice();
+      const t = $('voice-banner-text');
+      t.textContent = '';
+      const b = document.createElement('b');
+      b.textContent = `You are hearing your phone's own voice, not ${v.name}.`;
+      t.append(b, ` ${v.name} and the other voices you chose are made by the Thendral laptop app. Once it is installed, each page you photograph comes with ${v.name}'s audio, and you import it here.`);
+    }
+  };
+  $('voice-banner-ok').addEventListener('click', () => { settings.set('bannerOk', true); updateBanner(); });
 
   // ---------- settings ----------
   let previewAudio = null;
@@ -983,7 +1059,7 @@
         settings.set('style', styleId);
         renderChoices();
         if (playing && !hasAudio()) speakCurrent();
-        if (native && current && hasAudio() && current.style !== styleId) toast('Tap “Remake audio” to record this page in the new style.', 3500);
+        if (native && current && hasAudio() && current.style !== styleId) { toast('Tap “Save page” to record this page in the new style.', 3500); updateAudioChip(); }
       });
       c.append(pick);
       sl.append(c);
@@ -1005,7 +1081,8 @@
         voiceId = v.id;
         settings.set('kvoice', voiceId);
         renderChoices();
-        if (native && current && hasAudio() && current.voice !== voiceId) toast('Tap “Remake audio” to record this page with ' + v.name + '.', 3500);
+        updateBanner();
+        if (native && current && hasAudio() && current.voice !== voiceId) { toast('Tap “Save page” to record this page with ' + v.name + '.', 3500); updateAudioChip(); }
       });
       const listen = document.createElement('button');
       listen.type = 'button';
@@ -1051,17 +1128,21 @@
     r.addEventListener('change', () => settings.set('tapmode', r.value));
   });
 
-  $('open-library').addEventListener('click', () => ($('library').classList.contains('open') ? closeLibrary() : openLibrary()));
-  $('close-library').addEventListener('click', closeLibrary);
-  const toggleSettings = (show) => {
-    $('settings').hidden = !show;
-    $('open-settings').setAttribute('aria-expanded', String(show));
-    if (show) window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-  $('open-settings').addEventListener('click', () => toggleSettings($('settings').hidden));
-  $('close-settings').addEventListener('click', () => toggleSettings(false));
+  $('open-library').addEventListener('click', () => (document.body.dataset.screen === 'library' ? back() : go({ screen: 'library' })));
+  $('close-library').addEventListener('click', back);
+  $('open-settings').addEventListener('click', () => (document.body.dataset.screen === 'settings' ? back() : go({ screen: 'settings' })));
+  $('close-settings').addEventListener('click', back);
   $('edit-toggle').addEventListener('click', toggleEdit);
-  $('save-audio').addEventListener('click', () => (native ? current && makeAudio(current) : shareAudio()));
+  $('save-page').addEventListener('click', () => savePage());
+
+  // ---------- voice & style menu (⋮) ----------
+  const menuOpen = (open) => {
+    $('voice-menu').hidden = !open;
+    $('more').setAttribute('aria-expanded', String(open));
+  };
+  $('more').addEventListener('click', (e) => { e.stopPropagation(); menuOpen($('voice-menu').hidden); });
+  document.addEventListener('click', (e) => { if (!$('voice-menu').hidden && !e.target.closest('#voice-menu, #more')) menuOpen(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menuOpen(false); });
   $('book-input').addEventListener('change', async () => {
     if (!current) return;
     current.book = $('book-input').value.trim() || 'My pages';
@@ -1139,13 +1220,14 @@
     $('open-folder').addEventListener('click', () => native.openFolder(current ? bookOf(current) : ''));
   }
 
+  applyScreen(nav.stack[0]);
   setRate(rate, false);
   renderChoices();
   renderText();
   renderLibrary().then(async () => {
     try {
       const pages = (await db.all()).sort((a, b) => b.created - a.created);
-      if (pages[0] && !current) openPage(pages[0]);
+      if (pages[0] && !current) { openPage(pages[0]); nav.stack[0].pageId = pages[0].id; }
     } catch { /* storage blocked */ }
   });
 
